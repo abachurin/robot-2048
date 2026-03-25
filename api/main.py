@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from base.utils import *
+from worker_routes import router as worker_router
 
 RESTRICTED_USERNAMES = {"Login", "login", "Loki", "admin", "Admin"}
 
@@ -33,6 +34,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(worker_router)
 
 
 @app.get('/')
@@ -213,4 +216,4 @@ async def watch_job_cancel(req: UserName):
 
 if __name__ == '__main__':
 
-    uvicorn.run(app, host="0.0.0.0", port=5000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)

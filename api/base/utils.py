@@ -1,5 +1,5 @@
 from .storage import *
-from .database import Database
+from .database import *
 
 working_directory = os.path.dirname(os.path.realpath(__file__))
 with open(os.path.join(working_directory, 'config.json'), 'r') as f:

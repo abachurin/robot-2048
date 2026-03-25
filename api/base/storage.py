@@ -23,3 +23,14 @@ class Storage:
         key = full_key(name)
         if key in self.list_files():
             self.engine.Object(self.space_name, key).delete()
+
+    def upload(self, local_path: str, name: str):
+        key = full_key(name)
+        self.space.upload_file(local_path, key)
+
+    def download(self, name: str, local_path: str) -> bool:
+        key = full_key(name)
+        if key not in self.list_files():
+            return False
+        self.space.download_file(key, local_path)
+        return True

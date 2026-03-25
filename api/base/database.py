@@ -450,6 +450,136 @@ class Database:
         with self.conn() as c:
             c.execute("DELETE FROM games WHERE user=?", (user,))
 
+    # --- Worker: Jobs ---
+
+    def get_all_jobs(self) -> List[dict]:
+        """Return all jobs with description, status, type."""
+        with self.conn() as c:
+            rows = c.execute("SELECT description, status, type FROM jobs").fetchall()
+        return [dict(r) for r in rows]
+
+    def launch_job(self, description: str) -> Union[dict, None]:
+        """Set job to RUN, set start time, return full job dict."""
+        import time
+        with self.conn() as c:
+            c.execute(
+                "UPDATE jobs SET status=?, start=? WHERE description=?",
+                (JobStatus.RUN.value, int(time.time()), description)
+            )
+            row = c.execute("SELECT * FROM jobs WHERE description=?", (description,)).fetchone()
+        if row is None:
+            return None
+        return dict(row)
+
+    def get_job_status(self, description: str) -> Union[int, None]:
+        """Return job status int, or None if job was deleted/killed."""
+        with self.conn() as c:
+            row = c.execute(
+                "SELECT status FROM jobs WHERE description=?", (description,)
+            ).fetchone()
+        return row['status'] if row else None
+
+    def update_job_timing(self, description: str, elapsed: int, remaining: int):
+        with self.conn() as c:
+            c.execute(
+                "UPDATE jobs SET timeElapsed=?, remainingTimeEstimate=? WHERE description=?",
+                (elapsed, remaining, description)
+            )
+
+    def update_job_alpha(self, description: str, alpha: float):
+        with self.conn() as c:
+            c.execute("UPDATE jobs SET alpha=? WHERE description=?", (alpha, description))
+
+    def delete_job(self, description: str):
+        with self.conn() as c:
+            c.execute("DELETE FROM jobs WHERE description=?", (description,))
+
+    # --- Worker: Agents ---
+
+    def get_agent(self, name: str) -> Union[dict, None]:
+        """Get full agent record."""
+        with self.conn() as c:
+            row = c.execute("SELECT * FROM agents WHERE name=?", (name,)).fetchone()
+        if row is None:
+            return None
+        d = dict(row)
+        d['history'] = json.loads(d['history'])
+        d['weightSignature'] = json.loads(d['weightSignature'])
+        return d
+
+    def update_agent(self, name: str, updates: dict):
+        """Partial update of agent fields."""
+        if not updates:
+            return
+        # JSON-encode list/dict fields
+        for k, v in updates.items():
+            if isinstance(v, (list, dict)):
+                updates[k] = json.dumps(v)
+        set_clause = ', '.join(f'{k}=?' for k in updates)
+        values = list(updates.values()) + [name]
+        with self.conn() as c:
+            c.execute(f"UPDATE agents SET {set_clause} WHERE name=?", values)
+
+    # --- Worker: Games ---
+
+    def save_game(self, name: str, user: str, score: int, num_moves: int,
+                  max_tile: int, initial, moves, tiles):
+        """Insert or replace a game."""
+        with self.conn() as c:
+            c.execute(
+                "INSERT OR REPLACE INTO games (name, user, score, numMoves, maxTile, initial, moves, tiles) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (name, user, score, num_moves, max_tile,
+                 json.dumps(initial), json.dumps(moves), json.dumps(tiles))
+            )
+
+    def update_watch_game(self, user: str, moves: list, tiles: list):
+        """Append moves and tiles to an existing watch game."""
+        with self.conn() as c:
+            row = c.execute(
+                "SELECT moves, tiles FROM games WHERE user=?", (user,)
+            ).fetchone()
+            if row is None:
+                return
+            existing_moves = json.loads(row['moves'])
+            existing_tiles = json.loads(row['tiles'])
+            existing_moves.extend(moves)
+            existing_tiles.extend(tiles)
+            c.execute(
+                "UPDATE games SET moves=?, tiles=? WHERE user=?",
+                (json.dumps(existing_moves), json.dumps(existing_tiles), user)
+            )
+
+    def set_watch_loading(self, description: str, loading: bool):
+        with self.conn() as c:
+            c.execute(
+                "UPDATE jobs SET loadingWeights=? WHERE description=?",
+                (int(loading), description)
+            )
+
+    # --- Worker: Cleanup ---
+
+    def clean_watch_jobs(self):
+        """Delete all watch jobs and their associated games on startup."""
+        with self.conn() as c:
+            watch_users = [r['user'] for r in c.execute(
+                "SELECT user FROM jobs WHERE type=?", (JobType.WATCH.value,)
+            ).fetchall()]
+            c.execute("DELETE FROM jobs WHERE type=?", (JobType.WATCH.value,))
+            for u in watch_users:
+                c.execute("DELETE FROM games WHERE user=?", (u,))
+
+    def clean_orphaned_watch_games(self):
+        """Delete watch games whose jobs no longer exist."""
+        with self.conn() as c:
+            active_watch_users = [r['user'] for r in c.execute(
+                "SELECT user FROM jobs WHERE type=?", (JobType.WATCH.value,)
+            ).fetchall()]
+            rows = c.execute("SELECT user FROM games WHERE user LIKE '*%'").fetchall()
+            for r in rows:
+                if r['user'] not in active_watch_users:
+                    c.execute("DELETE FROM games WHERE user=?", (r['user'],))
+
     # --- Helpers for user deletion ---
 
     def get_agent_names_for_user(self, user: str) -> List[str]:

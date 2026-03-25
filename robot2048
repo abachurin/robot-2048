@@ -1,0 +1,76 @@
+#!/bin/bash
+# Launch all robot-2048 components locally
+# Usage: robot2048
+
+set -e
+
+SOURCE="$0"
+while [ -L "$SOURCE" ]; do
+    DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+    SOURCE="$(readlink "$SOURCE")"
+    [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+
+# Colors for output prefixes
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# PIDs to clean up
+PIDS=()
+
+cleanup() {
+    echo ""
+    echo "Shutting down..."
+    for pid in "${PIDS[@]}"; do
+        kill "$pid" 2>/dev/null || true
+    done
+    wait 2>/dev/null
+    echo "Done."
+    exit 0
+}
+
+trap cleanup SIGINT SIGTERM
+
+# --- Start API ---
+echo -e "${GREEN}[API]${NC} Starting FastAPI on :8000..."
+(
+    cd "$DIR/api"
+    source venv/bin/activate
+    python3 main.py 2>&1 | sed "s/^/$(printf "${GREEN}[API]${NC} ")/"
+) &
+PIDS+=($!)
+
+# Give API a moment to start
+sleep 2
+
+# --- Start Julia Worker ---
+echo -e "${RED}[WORKER]${NC} Starting Julia worker..."
+(
+    cd "$DIR/julia-worker"
+    julia --project=. main.jl 2>&1 | sed "s/^/$(printf "${RED}[WORKER]${NC} ")/"
+) &
+PIDS+=($!)
+
+# --- Start UI Dev Server ---
+echo -e "${BLUE}[UI]${NC} Starting Vite dev server on :5173..."
+(
+    cd "$DIR/ts-vite-ui"
+    npm run dev 2>&1 | sed "s/^/$(printf "${BLUE}[UI]${NC} ")/"
+) &
+PIDS+=($!)
+
+echo ""
+echo "==================================="
+echo "  robot-2048 running locally"
+echo "  UI:     http://localhost:5173"
+echo "  API:    http://localhost:8000"
+echo "  Docs:   http://localhost:8000/docs"
+echo "  Press Ctrl+C to stop all"
+echo "==================================="
+echo ""
+
+# Wait for any process to exit
+wait
