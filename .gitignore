@@ -21,7 +21,7 @@ dist-ssr/
 # Julia
 julia-worker/weights/
 julia-worker/logs/
-julia-worker/Manifest.toml
+# julia-worker/Manifest.toml  # needed for reproducible builds
 
 # Data
 api/data/
