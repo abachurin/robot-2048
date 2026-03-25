@@ -33,7 +33,7 @@ ingress:
 name: robot-2048
 region: fra
 services:
-- dockerfile_path: api/Dockerfile
+- dockerfile_path: Dockerfile
   github:
     branch: master
     deploy_on_push: true
@@ -44,13 +44,17 @@ services:
   name: api
   source_dir: /api
 workers:
-- dockerfile_path: julia-worker/Dockerfile
+- dockerfile_path: Dockerfile
+  envs:
+  - key: API_HOST
+    scope: RUN_TIME
+    value: ${api.PRIVATE_URL}
   github:
     branch: master
     deploy_on_push: true
     repo: abachurin/robot-2048
   instance_count: 1
-  instance_size_slug: professional-m
+  instance_size_slug: basic-m
   name: julia-worker
   source_dir: /julia-worker
 static_sites:

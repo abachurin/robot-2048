@@ -159,6 +159,11 @@ async def jobs_cancel(cancel_request: JobCancelRequest) -> str:
 
 @app.post('/jobs/train')
 async def jobs_train(job: TrainJob) -> str:
+    # Check N permission
+    level = DB.check_user_level(job.user)
+    max_n = MAX_N_ADMIN if level == UserLevel.ADMIN else MAX_N_USER
+    if job.N > max_n:
+        return f"N={job.N} requires elevated permissions. Max allowed: N={max_n}"
     running_now = DB.check_train_test_job(job.user)
     if running_now is not None:
         return f"Currently running {running_now}. Stop/Kill it first."
@@ -173,7 +178,7 @@ async def jobs_train(job: TrainJob) -> str:
     if job.episodes:
         job.description = f"Training {job.name} for {job.user}"
         job.type = JobType.TRAIN
-        return DB.new_job(job)
+        return DB.new_job(job, agent_n=job.N)
 
 
 @app.post('/jobs/test')
@@ -186,7 +191,7 @@ async def jobs_test(job: TestJob) -> str:
         return f"Agent {job.name} doesn't exist"
     job.description = f"Testing {job.name} for {job.user}"
     job.type = JobType.TEST
-    return DB.new_job(job)
+    return DB.new_job(job, agent_n=n)
 
 
 # Watch Agent Job endpoints
@@ -200,7 +205,7 @@ async def watch_new_agent(job: WatchAgentJob) -> str:
     n = DB.check_agent(job.name)
     if not n:
         return f"Agent {job.name} doesn't exist"
-    return DB.new_watch_job(job)
+    return DB.new_watch_job(job, agent_n=n)
 
 
 @app.post('/watch/new_moves')

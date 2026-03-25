@@ -13,6 +13,19 @@ import uvicorn
 
 RAM_RESERVE = 500
 MAX_AGENTS = 5
+MAX_CONCURRENT_JOBS = 5
+WORKER_TOTAL_RAM = 4000  # basic-m instance, MB
+MAX_N_USER = 5
+MAX_N_ADMIN = 6
+
+# Estimated RAM per agent in MB, by N (includes Julia overhead per job)
+AGENT_RAM_MB = {
+    2: 1,
+    3: 2,
+    4: 10,
+    5: 30,
+    6: 900,   # worst case cutoff=15; cutoff=13 is ~400MB
+}
 
 
 def full_key(name):

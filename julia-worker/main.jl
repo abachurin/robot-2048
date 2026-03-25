@@ -38,8 +38,14 @@ function parse_args()
 end
 
 function main()
-    host, port = parse_args()
-    client = WorkerClient(; host, port)
+    # In deployed mode, API_HOST is set by DO (e.g. "http://api:8000")
+    api_host = get(ENV, "API_HOST", nothing)
+    if api_host !== nothing
+        client = WorkerClient(api_host)
+    else
+        host, port = parse_args()
+        client = WorkerClient(; host, port)
+    end
 
     # Weights cache directory
     weights_dir = joinpath(@__DIR__, "weights")

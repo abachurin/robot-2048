@@ -160,12 +160,22 @@ class Database:
                     (UserLevel.ADMIN.value,)
                 )
 
-    def check_available_memory(self) -> Tuple[int, int]:
-        # Memory tracking will be handled by the Julia worker.
-        # Return large free memory; just count active jobs.
+    def check_available_memory(self, new_n: int = 4) -> Tuple[int, int]:
+        """Estimate free RAM on worker. Returns (free_mb, num_jobs)."""
         with self.conn() as c:
-            count = c.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
-        return 1000000, count
+            rows = c.execute("SELECT N FROM jobs WHERE status IN (?, ?)",
+                             (JobStatus.PENDING.value, JobStatus.RUN.value)).fetchall()
+        num_jobs = len(rows)
+        used = sum(AGENT_RAM_MB.get(r['N'], 30) for r in rows if r['N'] is not None)
+        used += 300  # Julia base overhead
+        new_job_ram = AGENT_RAM_MB.get(new_n, 30)
+        free = WORKER_TOTAL_RAM - used - new_job_ram
+        return free, num_jobs
+
+    def check_user_level(self, user_name: str) -> UserLevel:
+        with self.conn() as c:
+            row = c.execute("SELECT level FROM users WHERE name=?", (user_name,)).fetchone()
+        return UserLevel(row['level']) if row else UserLevel.USER
 
     # --- Logs ---
 
@@ -357,10 +367,12 @@ class Database:
             return TrainJobDescription(**job)
         return TestJobDescription(**job)
 
-    def new_job(self, job: Job) -> str:
-        free_memory, num_jobs = self.check_available_memory()
+    def new_job(self, job: Job, agent_n: int = 4) -> str:
+        free_memory, num_jobs = self.check_available_memory(agent_n)
+        if num_jobs >= MAX_CONCURRENT_JOBS:
+            return f'Worker at max capacity ({MAX_CONCURRENT_JOBS} jobs). Try again later.'
         if free_memory < RAM_RESERVE:
-            return f'We are sorry, Worker is at full capacity. Currently running {num_jobs}. Try again later.'
+            return f'Not enough memory for N={agent_n} agent. Currently running {num_jobs} jobs. Try again later.'
         with self.conn() as c:
             d = _pydantic_to_dict(job)
             d['status'] = JobStatus.PENDING.value
@@ -377,10 +389,12 @@ class Database:
 
     # --- Watch ---
 
-    def new_watch_job(self, job: WatchAgentJob) -> str:
-        free_memory, num_jobs = self.check_available_memory()
+    def new_watch_job(self, job: WatchAgentJob, agent_n: int = 4) -> str:
+        free_memory, num_jobs = self.check_available_memory(agent_n)
+        if num_jobs >= MAX_CONCURRENT_JOBS:
+            return f'Worker at max capacity ({MAX_CONCURRENT_JOBS} jobs). Try again later.'
         if free_memory < RAM_RESERVE:
-            return f'We are sorry, Worker is at full capacity. Currently running {num_jobs}. Try again later.'
+            return f'Not enough memory for N={agent_n} agent. Currently running {num_jobs} jobs. Try again later.'
         with self.conn() as c:
             d = _pydantic_to_dict(job)
             d['type'] = JobType.WATCH.value
